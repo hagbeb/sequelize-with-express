@@ -14,6 +14,7 @@ function asyncHandler(cb){
       await cb(req, res, next)
     } catch(error){
       // Forward error to the global error handler
+      // This forwards the error to the global error handler in app.js
       next(error);
     }
   }
@@ -45,14 +46,37 @@ router.get('/new', (req, res) => {
 // ...of the data submitted in the request body ie the form data...
 // ... As this maps to the article models fields, pass this into create()
 router.post('/', asyncHandler(async (req, res) => {
-  const article = await Article.create(req.body);
-  // redirect to the article, using it's database id property
-  res.redirect("/articles/" + article.id);
+  let article;
+  try {
+    article = await Article.create(req.body);
+    res.redirect("/articles/" + article.id);
+  } catch (error) {
+    // If the error caught by catch is a SequelizeValidationError, re-render the...
+    // ... articles/new view ("New Article" form), passing in the errors to display:
+    if(error.name === "SequelizeValidationError") { // checking the error
+      // use build() (NOT create() ) as we are not saving this version, due to error
+      article = await Article.build(req.body);
+      // Pass in the errors so we can display them
+      res.render("articles/new", { article, errors: error.errors, title: "New Article" })
+    } else {
+      // throw other types of errors, which will be handled by the catch block...
+      // ... in the asyncHandler function
+      throw error; // error caught in the asyncHandler's catch block
+    }  
+  }
 }));
 
 /* Edit article form. */
 router.get("/:id/edit", asyncHandler(async(req, res) => {
-  res.render("articles/edit", { article: {}, title: "Edit Article" });
+  // find article to update
+  const article = await Article.findByPk(req.params.id);
+  if (article) {
+    // render article using edit view, pass the retrieved article
+    res.render("articles/edit", { article, title: "Edit Article" });
+  } else {
+    // if article doesn't exist, send a 404 status to the client (VS Code terminal)
+    res.sendStatus(404);
+  }
 }));
 
 /* GET individual article. */
@@ -61,26 +85,85 @@ router.get("/:id", asyncHandler(async (req, res) => {
   // use Sequelize's findByPK method to find the article using id. 
   // For the id, use the param in the route
   const article = await Article.findByPk(req.params.id);
+  if (article) {
   // render the article instance returned by findByPk. This will be available to the ...
   // ... view in views/articles/show.pug
   // below, the 'article' variable is shorthand for article: article. We can...
   // ...use this shorthand as the key & value have the same name
-  res.render("articles/show", { article, title: article.title }); 
+    res.render("articles/show", { article, title: article.title });
+  } else {
+    // if article doesn't exist, send a 404 status to the client (VS Code terminal)
+    res.sendStatus(404);
+  }
 }));
 
 /* Update an article. */
 router.post('/:id/edit', asyncHandler(async (req, res) => {
-  res.redirect("/articles/");
+  let article;
+  try {
+    // find article
+    article = await Article.findByPk(req.params.id);
+    if(article) {
+      // the update method is also asynchronous. Pass in object with key/values to update
+      await article.update(req.body);
+      // if article exists, redirect to article page
+      res.redirect("/articles/" + article.id); 
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (error) {
+    // If the error caught by catch is a SequelizeValidationError, 
+    if(error.name === "SequelizeValidationError") {
+      // use build() (NOT create() ) as we are not saving this version, due to error
+      article = await Article.build(req.body);
+      article.id = req.params.id; // make sure correct article gets updated
+      // pass in errors so we can display them
+      res.render("articles/edit", { article, errors: error.errors, title: "Edit Article" })
+    } else {
+      // throw other types of errors, which will be handled by the catch block...
+      // ... in the asyncHandler function
+      throw error;
+    }
+  }
 }));
 
+  /*
+  const article = await Article.findByPk(req.params.id);
+  if (article) {
+    await article.update(req.body);
+    res.redirect("/articles/" + article.id);
+  } else {
+    res.sendStatus(404);
+  }
+}));
+*/
 /* Delete article form. */
 router.get("/:id/delete", asyncHandler(async (req, res) => {
-  res.render("articles/delete", { article: {}, title: "Delete Article" });
+  // use Sequelize's findByPK method to find the article using id. 
+  // For the id, use the param in the route
+  const article = await Article.findByPk(req.params.id);
+  if (article) {
+    // render delete view, pass in article retrieved for the view to use
+    res.render("articles/delete", { article, title: "Delete Article" });
+  } else {
+    // if article doesn't exist, send a 404 status to the client (VS Code terminal)
+    res.sendStatus(404);
+  }
 }));
 
 /* Delete individual article. */
 router.post('/:id/delete', asyncHandler(async (req ,res) => {
-  res.redirect("/articles");
+  // use Sequelize's findByPK method to find the article using id. 
+  // For the id, use the param in the route
+  const article = await Article.findByPk(req.params.id);
+  if (article) {
+    // use the destroy() sequelize method to delete it. It is also async
+    await article.destroy();
+    res.redirect("/articles");
+  } else {
+    // if article doesn't exist, send a 404 status to the client (VS Code terminal)
+    res.sendStatus(404);
+  }
 }));
 
 module.exports = router;
